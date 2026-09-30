@@ -41,56 +41,7 @@ a versioned decoder or an explicit migration because old serialized values
 cannot be assumed to contain the new field. Existing `Stream(id)` records must
 remain readable throughout the migration.
 
-### Edge behavior: reading a stream created by a previous build
 
-The following behavior is normative for any build that reads state written
-by an earlier build. These cases are covered by tests in `contracts/src/test.rs`
-(see `test_read_legacy_stream_preserves_balances`,
-`test_read_legacy_stream_checked_arithmetic`, and `test_upgrade_read_old_state_preserves_state`).
-
-1. **Same layout, new build.** A `Stream(id)` written by a previous build with the
-   same `DataKey` layout decodes to the same `Stream` value. All fields are
-   preserved byte-for-byte; no field is defaulted or dropped.
-
-2. **Integer token units.** All amounts (`total_amount`, `claimed_amount`,
-   `withdrawn_amount`) are `i128` in the token's base unit. Reading old state
-   must not rescale or round these units. A value written as `10_000_000`
-   reads back as `10_000_000`, never as a decimal or a different denomination.
-
-3. **Checked arithmetic.** Any arithmetic performed while reading or updating
-   old state uses checked operations. If an addition or subtraction on
-   `claimed_amount` or `total_amount` would overflow or underflow `i128`, the
-   call fails with the contract's checked-arithmetic error rather than wrapping.
-   No partial write is persisted when the arithmetic fails.
-
-4. **Invariant preservation.** Reading old state must preserve
-4. **Invariant preservation.** Reading old state must preserve
-   `claimed_amount <= total_amount` and the address/boolean lifecycle fields.
-   Values must not be silently coerced during a read.
-
-5. **Unknown / future fields.** If a newer build adds fields to `Stream`, an
-   older build reading that state must fail closed (decode error) rather than
-   ignoring the extra bytes. This is why adding fields requires a versioned
-   decoder or an explicit migration.
-
-6. **Missing optional metadata.** Optional metadata that was absent in the old
-   record reads as `None`; it is not invented or substituted with a default
-   value.
-
-7. **No mutation on read.** Reading a stream created by a previous build does
-   not modify its stored representation. Only explicit mutating entry points
-   (claim, pause, resume, cancel, clawback, transfer) write back to
-   `Stream(id)`.
-
-### Edge behavior: upgraded code encountering old state
-
-When a new WASM is deployed over existing storage:
-
-1. **Read compatibility.** As long as the `DataKey` layout and `Stream` encoding
-   are unchanged, the upgraded code reads old `Stream(id)` records unchanged.
-2. **Layout-changing upgrade.** If the layout changes, the compatibility read
-   path must remain available until the bounded migration completes. During
-   the migration, old records remain readable and balances are not changed.
 
 Before deploying a layout-changing WASM:
 

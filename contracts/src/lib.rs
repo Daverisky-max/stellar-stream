@@ -8,7 +8,7 @@ pub mod dao;
 pub mod templates;
 use soroban_sdk::{
     contract, contractimpl, contracttype, symbol_short, token::Client as TokenClient, Address, Env,
-    Map, String, Vec,
+    Map, String, Symbol, TryFromVal, Val, Vec,
 };
 
 // ---------------------------------------------------------------------------
@@ -1322,10 +1322,59 @@ fn read_template(env: &Env, template_id: u64) -> StreamTemplate {
 }
 
 fn read_stream(env: &Env, stream_id: u64) -> Stream {
-    env.storage()
+    let key = DataKey::Stream(stream_id);
+    let fields: Map<Symbol, Val> = env
+        .storage()
         .persistent()
-        .get(&DataKey::Stream(stream_id))
-        .unwrap_or_else(|| panic!("stream not found"))
+        .get(&key)
+        .unwrap_or_else(|| panic!("stream not found"));
+    Stream {
+        sender: read_stream_field(env, &fields, "sender"),
+        recipient: read_stream_field(env, &fields, "recipient"),
+        token: read_stream_field(env, &fields, "token"),
+        total_amount: read_stream_field(env, &fields, "total_amount"),
+        claimed_amount: read_stream_field(env, &fields, "claimed_amount"),
+        start_time: read_stream_field(env, &fields, "start_time"),
+        end_time: read_stream_field(env, &fields, "end_time"),
+        cliff_seconds: read_stream_field_or(env, &fields, "cliff_seconds", 0),
+        vesting_type: read_stream_field_or(
+            env,
+            &fields,
+            "vesting_type",
+            String::from_str(env, "linear"),
+        ),
+        min_claim_interval_seconds: read_stream_field_or(
+            env,
+            &fields,
+            "min_claim_interval_seconds",
+            0,
+        ),
+        last_claim_time: read_stream_field_or(env, &fields, "last_claim_time", 0),
+        canceled: read_stream_field_or(env, &fields, "canceled", false),
+        paused: read_stream_field_or(env, &fields, "paused", false),
+        pause_started_at: read_stream_field_or(env, &fields, "pause_started_at", None),
+        metadata: read_stream_field_or(env, &fields, "metadata", None),
+    }
+}
+
+fn read_stream_field<T>(env: &Env, fields: &Map<Symbol, Val>, name: &str) -> T
+where
+    T: TryFromVal<Env, Val>,
+{
+    let value: Val = fields
+        .get(Symbol::new(env, name))
+        .unwrap_or_else(|| panic!("invalid stream"));
+    T::try_from_val(env, &value).unwrap_or_else(|_| panic!("invalid stream"))
+}
+
+fn read_stream_field_or<T>(env: &Env, fields: &Map<Symbol, Val>, name: &str, default: T) -> T
+where
+    T: TryFromVal<Env, Val>,
+{
+    match fields.get(Symbol::new(env, name)) {
+        Some(value) => T::try_from_val(env, &value).unwrap_or_else(|_| panic!("invalid stream")),
+        None => default,
+    }
 }
 
 fn vested_amount(stream: &Stream, at_time: u64) -> i128 {

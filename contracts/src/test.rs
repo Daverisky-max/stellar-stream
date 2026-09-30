@@ -26,6 +26,24 @@ impl MockToken {
     }
 }
 
+#[contracttype]
+#[derive(Clone, Debug, PartialEq, Eq)]
+struct PreviousBuildStream {
+    sender: Address,
+    recipient: Address,
+    token: Address,
+    total_amount: i128,
+    claimed_amount: i128,
+    start_time: u64,
+    end_time: u64,
+    min_claim_interval_seconds: u64,
+    last_claim_time: u64,
+    canceled: bool,
+    paused: bool,
+    pause_started_at: Option<u64>,
+    metadata: Option<Map<String, String>>,
+}
+
 // ---------------------------------------------------------------------------
 // Helpers
 // ---------------------------------------------------------------------------
@@ -38,6 +56,105 @@ fn make_metadata(env: &Env) -> Map<String, String> {
         String::from_str(env, "engineering"),
     );
     m
+}
+
+#[test]
+fn test_reads_stream_from_previous_build() {
+    let env = Env::default();
+    let contract_id = env.register_contract(None, StellarStreamContract);
+    let client = StellarStreamContractClient::new(&env, &contract_id);
+    let stream_id = 7;
+    let previous_stream = PreviousBuildStream {
+        sender: Address::generate(&env),
+        recipient: Address::generate(&env),
+        token: Address::generate(&env),
+        total_amount: 500,
+        claimed_amount: 100,
+        start_time: 1_000,
+        end_time: 2_000,
+        min_claim_interval_seconds: 30,
+        last_claim_time: 1_100,
+        canceled: false,
+        paused: false,
+        pause_started_at: None,
+        metadata: None,
+    };
+
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Stream(stream_id), &previous_stream);
+    });
+
+    let stream = client.get_stream(&stream_id);
+    assert_eq!(stream.total_amount, previous_stream.total_amount);
+    assert_eq!(stream.claimed_amount, previous_stream.claimed_amount);
+    assert_eq!(stream.cliff_seconds, 0);
+    assert_eq!(stream.vesting_type, String::from_str(&env, "linear"));
+}
+
+#[test]
+fn test_failed_claims_from_previous_build_preserve_state_and_balances() {
+    let env = Env::default();
+    env.mock_all_auths();
+    let contract_id = env.register_contract(None, StellarStreamContract);
+    let client = StellarStreamContractClient::new(&env, &contract_id);
+    let stream_id = 7;
+    let recipient = Address::generate(&env);
+    let token_admin = Address::generate(&env);
+    let token = create_token(&env, &token_admin);
+    let token_client = token::Client::new(&env, &token);
+    let previous_stream = PreviousBuildStream {
+        sender: Address::generate(&env),
+        recipient: recipient.clone(),
+        token: token.clone(),
+        total_amount: 500,
+        claimed_amount: 100,
+        start_time: 1_000,
+        end_time: 2_000,
+        min_claim_interval_seconds: 30,
+        last_claim_time: 1_100,
+        canceled: false,
+        paused: false,
+        pause_started_at: None,
+        metadata: None,
+    };
+
+    env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .set(&DataKey::Stream(stream_id), &previous_stream);
+    });
+
+    env.ledger().with_mut(|ledger| ledger.timestamp = 1_100);
+    assert!(client.try_claim(&stream_id, &recipient, &1).is_err());
+
+    let stored_after_pre_transfer_failure: PreviousBuildStream =
+        env.as_contract(&contract_id, || {
+            env.storage()
+                .persistent()
+                .get(&DataKey::Stream(stream_id))
+                .unwrap()
+        });
+    assert_eq!(stored_after_pre_transfer_failure, previous_stream);
+    assert_eq!(token_client.balance(&contract_id), 0);
+    assert_eq!(token_client.balance(&recipient), 0);
+
+    env.ledger().with_mut(|ledger| ledger.timestamp = 1_500);
+    assert!(client.try_claim(&stream_id, &recipient, &1).is_err());
+
+    let stored_after_transfer_failure: PreviousBuildStream = env.as_contract(&contract_id, || {
+        env.storage()
+            .persistent()
+            .get(&DataKey::Stream(stream_id))
+            .unwrap()
+    });
+    assert_eq!(stored_after_transfer_failure, previous_stream);
+    assert_eq!(token_client.balance(&contract_id), 0);
+    assert_eq!(token_client.balance(&recipient), 0);
+    let stream = client.get_stream(&stream_id);
+    assert_eq!(stream.claimed_amount, previous_stream.claimed_amount);
+    assert_eq!(stream.last_claim_time, previous_stream.last_claim_time);
 }
 
 // ---------------------------------------------------------------------------
