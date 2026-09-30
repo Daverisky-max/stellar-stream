@@ -40,6 +40,11 @@ a versioned decoder or an explicit migration because old serialized values
 cannot be assumed to contain the new field. Existing `Stream(id)` records must
 remain readable throughout the migration.
 
+The current reader also accepts the pre-template stream layout. It defaults
+`cliff_seconds` to `0` and `vesting_type` to `linear`; a successful mutation
+rewrites that record using the current layout. A failed call leaves the old
+record untouched.
+
 Before deploying a layout-changing WASM:
 
 1. Freeze new stream creation or gate it behind a migration version.
