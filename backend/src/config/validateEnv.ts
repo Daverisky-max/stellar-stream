@@ -1,5 +1,6 @@
 import { z } from 'zod';
 import { logger } from '../logger';
+import { redactSecrets } from './redactSecrets';
 
 /**
  * Validates Soroban-related environment variables at startup.

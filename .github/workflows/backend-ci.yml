@@ -27,8 +27,7 @@ jobs:
 
       - uses: actions/setup-node@v4
         with:
-          # vitest@5 and better-sqlite3@13 require Node >= 22.
-          node-version: '22'
+
           cache: 'npm'
           cache-dependency-path: backend/package-lock.json
 
@@ -43,6 +42,8 @@ jobs:
 
       - name: Unit tests with coverage
         run: npx vitest run --coverage --coverage.thresholds.lines=80 --coverage.thresholds.branches=80
+        env:
+          CI: 'true'
 
       - uses: actions/upload-artifact@v4
         if: always()
