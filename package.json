@@ -11,7 +11,7 @@
     "verify:backend-ci": "node scripts/check-backend-ci.mjs",
     "compose:up": "bash scripts/compose-up.sh",
     "test:compose-up": "bash scripts/compose-up.test.sh",
-    "test:deploy": "bash scripts/deploy.test.sh",
+
     "sqlite:backup": "bash scripts/sqlite-backup.sh",
     "test:sqlite-backup": "bash scripts/sqlite-backup.test.sh",
     "build": "cd backend && npm run build && cd ../frontend && npm run build",
